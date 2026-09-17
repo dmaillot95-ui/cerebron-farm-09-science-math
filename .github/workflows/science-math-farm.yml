@@ -1,0 +1,90 @@
+name: CEREBRON Farm 09 Science Math
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.m.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: m
+        shell: python
+        run: |
+          import json, os
+          roles=[
+          ('ALGEBRA_SPECIALIST','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('ANALYSIS_SPECIALIST','huggingface-projects/gemma-2-9b-it','gemma-2'),
+          ('GEOMETRY_SPECIALIST','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('NUMBER_THEORY_SPECIALIST','huggingface-projects/gemma-2-9b-it','gemma-2'),
+          ('COMBINATORICS_SPECIALIST','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('PROBABILITY_SPECIALIST','huggingface-projects/gemma-2-9b-it','gemma-2'),
+          ('DYNAMICAL_SYSTEMS_SPECIALIST','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('OPTIMIZATION_SPECIALIST','huggingface-projects/gemma-2-9b-it','gemma-2'),
+          ('GRAPH_THEORY_SPECIALIST','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('LOGIC_SPECIALIST','huggingface-projects/gemma-2-9b-it','gemma-2'),
+          ('DIOPHANTINE_SPECIALIST','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('ASYMPTOTIC_ANALYST','huggingface-projects/gemma-2-9b-it','gemma-2'),
+          ('PROOF_CREATOR_A','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('PROOF_CREATOR_B','huggingface-projects/gemma-2-9b-it','gemma-2'),
+          ('COUNTEREXAMPLE_HUNTER','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('COMPUTATIONAL_EXPERIMENTER','huggingface-projects/gemma-2-9b-it','gemma-2'),
+          ('FORMAL_PROOF_AUDITOR','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('REPLICATOR','huggingface-projects/gemma-2-9b-it','gemma-2'),
+          ('SYNTHESIZER','huggingface-projects/llama-3.2-3B-Instruct','llama-3.2'),
+          ('JUDGE','huggingface-projects/gemma-2-9b-it','gemma-2')]
+          d={'include':[{'role':r,'model':m,'family':f} for r,m,f in roles]}
+          with open(os.environ['GITHUB_OUTPUT'],'a') as g: g.write('matrix='+json.dumps(d)+'\n')
+
+  math-agent:
+    needs: plan
+    strategy:
+      fail-fast: false
+      max-parallel: 20
+      matrix: ${{ fromJson(needs.plan.outputs.matrix) }}
+    runs-on: ubuntu-latest
+    env:
+      ROLE: ${{ matrix.role }}
+      MODEL: ${{ matrix.model }}
+      FAMILY: ${{ matrix.family }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install --quiet gradio_client
+      - name: Execute math role
+        run: python worker/farm_worker.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: math-${{ matrix.role }}
+          path: results/${{ matrix.role }}.json
+
+  omega-fusion:
+    needs: math-agent
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: math-*
+          path: packets
+          merge-multiple: true
+      - shell: python
+        run: |
+          import json,glob,os
+          rows=[]
+          for p in glob.glob('packets/*.json'):
+            try: rows.append(json.load(open(p)))
+            except: pass
+          out={'farm':'09-science-math','roles_returned':len(rows),'successful_external_ai_calls':sum(bool(r.get('success')) for r in rows),'families':sorted(set(r.get('family') for r in rows if r.get('success'))),'results':rows}
+          os.makedirs('omega',exist_ok=True)
+          json.dump(out,open('omega/packet.json','w'),indent=2,ensure_ascii=False)
+          print(json.dumps({k:out[k] for k in ['roles_returned','successful_external_ai_calls','families']}))
+      - uses: actions/upload-artifact@v4
+        with:
+          name: science-math-omega-packet
+          path: omega/packet.json
